@@ -8,3 +8,7 @@ export const userRegistrationValidate=vine.object({
         email: vine.string().email(),                          // Valid email
         password: vine.string().minLength(8).maxLength(150),    // Password between 8-150 chars
 })
+export const userLoginValidate=vine.object({
+    email:vine.string().email(),
+    password:vine.string().minLength(8).maxLength(150)
+ })

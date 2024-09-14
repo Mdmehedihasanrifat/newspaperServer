@@ -1,4 +1,4 @@
-export const supportedImageMimes = [
+export const supportedImageMimes: string[] = [
     "image/jpeg",
     "image/png",
     "image/gif",
@@ -8,3 +8,4 @@ export const supportedImageMimes = [
     "image/tiff",
     "image/x-icon"
   ];
+  

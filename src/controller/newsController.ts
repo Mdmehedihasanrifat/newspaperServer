@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { newsModel, userModel } from '../postgres/postgres'; // Adjust the import path to your actual model
+import { categoryModel, newsModel, userModel } from '../postgres/postgres'; // Adjust the import path to your actual model
 import { newsTransform } from '../transform/transform';
 import { newsValidationSchema } from '../validation/newsdataValidation';
 import { UploadedFile } from 'express-fileupload';
@@ -7,52 +7,62 @@ import { generateRandom, imageValidator,removeImage} from '../utils/helper';
 import { any } from 'zod';
 
 // Get all news articles
-
 export const newsIndex = async (req: Request, res: Response) => {
-    let page: number = parseInt(req.query.page as string, 10) || 1;
-    let limit: number = parseInt(req.query.limit as string, 10) || 10;
-  
-    if (page < 1) page = 1;
-    if (limit < 1 || limit > 100) limit = 10;
-  
-    const skip = (page - 1) * limit;
-  
-    try {
+  // Set default pagination values
+  let page: number = Math.max(parseInt(req.query.page as string, 10) || 1, 1);
+  let limit: number = Math.max(Math.min(parseInt(req.query.limit as string, 10) || 10, 100), 1);
+
+  // Calculate pagination offset
+  const skip = (page - 1) * limit;
+
+  try {
+      // Fetch news with pagination, user, and categories
       const news = await newsModel.findAll({
-        limit: limit,
-        offset: skip,
-        include: [
-          {
-            model: userModel,
-            as: "user",
-            attributes: ["id", "firstName", "profile"],
-          },
-        ],
-        attributes: ["id", "title", "description", "image", "createdAt"],
+          limit,
+          offset: skip,
+          include: [
+              {
+                  model: userModel,
+                  as: "user",
+                  attributes: ["id", "firstName", "profile"],
+              },
+              {
+                  model: categoryModel,
+                  as: "categories", // Assuming you have a relation defined with this alias
+                  attributes: ["id", "name"],
+                  through: { attributes: [] }  // Hide the junction table data if it's a many-to-many relationship
+              },
+          ],
+          attributes: ["id", "title", "description", "image", "createdAt"],
       });
-  
-      const newsTransformed = news.map((item) => newsTransform(item as any));
-  
+
+      // Transform news data
+      const newsTransformed = news.map(item => newsTransform(item as any));
+
+      // Count total news items
       const totalNews = await newsModel.count();
       const totalPages = Math.ceil(totalNews / limit);
-  
+
+      // Return paginated news with metadata and categories
       return res.json({
-        status: 200,
-        news: newsTransformed,
-        metadata: {
-          totalPages: totalPages,
-          currentPage: page,
-          limit: limit,
-        },
+          status: 200,
+          news: newsTransformed,
+          metadata: {
+              totalPages,
+              currentPage: page,
+              limit,
+          },
       });
-    } catch (error) {
+  } catch (error) {
+      // Log and return error response
       console.error('Error retrieving news:', error);
       return res.status(500).json({
-        status: 500,
-        message: 'Error retrieving news articles',
+          status: 500,
+          message: 'Error retrieving news articles',
       });
-    }
-  };
+  }
+};
+
 // Create a new news article
 
 interface AuthenticatedRequest extends Request {
@@ -72,9 +82,12 @@ export const newsStore = async (req: AuthenticatedRequest, res: Response): Promi
   
       // Attach userId to the request body
       body.userId = user.id;
-      let categoryId=parseInt(body.categoryId);
-      body.categoryId=categoryId;
+      let categoryIds: number[] = [];
+      if (body.categoryIds) {
+        categoryIds = body.categoryIds.split(',').map((id: string) => parseInt(id));
+      }
       // Validate the request body using Zod
+      body.categoryIds=categoryIds;
       const validator = newsValidationSchema.safeParse(body);
       if (!validator.success) {
         return res.status(400).json({ message: "Validation failed", errors: validator.error.format() });
@@ -108,9 +121,17 @@ export const newsStore = async (req: AuthenticatedRequest, res: Response): Promi
   
       // Create the news entry in the database
       const createdNews = await newsModel.create(payload);
+      const newsWithAssociations = await createdNews.reload({
+        include: [{ model: categoryModel, as: 'categories' }]
+      });
+  
+      // Associate categories with the news entry
+      if (categoryIds.length > 0) {
+        await newsWithAssociations.addCategories(categoryIds);
+      }
   
       // Respond with the created news entry
-      return res.json(createdNews);
+      return res.json(newsWithAssociations);
     } catch (err: any) {
       // Catch and handle any errors
       console.error("Error:", err);
@@ -179,7 +200,7 @@ export const newsUpdate = async (req: AuthenticatedRequest, res: Response) => {
       const body=req.body;
       if(body.title==null){body.title=news.title}
       if(body.description==null){body.description=news.description}
-      if(body.categoryId==null){body.categoryId=news.categoryId}
+    //   if(body.categoryId==null){body.categoryId=news.categoryId}
       if(body.image==null){body.image=news.image}
       body.userId=news.userId
 

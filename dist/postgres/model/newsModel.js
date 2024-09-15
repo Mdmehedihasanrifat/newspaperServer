@@ -21,19 +21,20 @@ const createNewsModel = (sequelize) => {
             type: sequelize_1.DataTypes.STRING(255),
             allowNull: true
         },
-        categoryId: {
-            type: sequelize_1.DataTypes.INTEGER,
-            references: {
-                model: 'category',
-                key: 'id'
-            }
-        },
+        // categoryId: {
+        //   type: DataTypes.INTEGER,
+        //   references: {
+        //     model: 'category',
+        //     key: 'id'
+        //   }
+        // },
         userId: {
             type: sequelize_1.DataTypes.INTEGER,
             references: {
                 model: 'Users',
                 key: 'id'
-            }
+            },
+            onDelete: 'CASCADE'
         },
         createdAt: {
             type: sequelize_1.DataTypes.DATE,

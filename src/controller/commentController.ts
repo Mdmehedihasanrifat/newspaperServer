@@ -58,3 +58,64 @@ export const listComments = async (req: Request, res: Response) => {
       return res.status(500).json({ status: 500, message: "Unknown error occurred" });
     }
   };
+
+//Update comment
+export const updateComment = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user.id; // Get the ID of the authenticated user
+      const { id } = req.params; // ID of the comment to update
+      const { comment } = req.body; // Updated comment text
+  
+      // Ensure the comment exists
+      const existingComment = await commentModel.findByPk(id);
+      if (!existingComment) {
+        return res.status(404).json({ status: 404, message: "Comment not found" });
+      }
+  
+      // Check if the user is authorized to update the comment
+      if (existingComment.userId !== userId) {
+        return res.status(403).json({ status: 403, message: "Unauthorized" });
+      }
+  
+      // Update the comment
+      await existingComment.update({ comment });
+  
+      return res.status(200).json({ status: 200, comment: existingComment });
+    } catch (err) {
+      if (err instanceof Error) {
+        return res.status(500).json({ status: 500, message: err.message });
+      }
+      return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+    }
+  };
+
+
+
+  // Delete a comment
+export const deleteComment = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user.id; // Get the ID of the authenticated user
+      const { id } = req.params; // ID of the comment to delete
+  
+      // Ensure the comment exists
+      const existingComment = await commentModel.findByPk(id);
+      if (!existingComment) {
+        return res.status(404).json({ status: 404, message: "Comment not found" });
+      }
+  
+      // Check if the user is authorized to delete the comment
+      if (existingComment.userId !== userId) {
+        return res.status(403).json({ status: 403, message: "Unauthorized" });
+      }
+  
+      // Delete the comment
+      await existingComment.destroy();
+  
+      return res.status(200).json({ status: 200, message: "Comment deleted successfully" });
+    } catch (err) {
+      if (err instanceof Error) {
+        return res.status(500).json({ status: 500, message: err.message });
+      }
+      return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+    }
+  };

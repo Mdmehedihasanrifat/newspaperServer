@@ -145,160 +145,176 @@ export const newsStore = async (req: AuthenticatedRequest, res: Response): Promi
 // Get a specific news article by ID
 
 export const newsShow = async (req: Request, res: Response): Promise<Response> => {
-    try {
-      const { id } = req.params; // Get the `id` from the request params
-      
-      // Fetch news with the specific ID and include user information
-      const news = await newsModel.findOne({
-        where: { id: id },
-        include: [
-          {
-            model: userModel,
-            as: 'user', // Match the alias from the association
-            attributes: ['id', 'firstName', 'email'] // Only select these user attributes
-          }
-        ]
-      });
-  
-      if (!news) {
-        // If no news article is found, return a 404 status
-        return res.status(404).json({ message: 'News article not found' });
-      }
-  
-      // Transform the news using the `newsTransform` function
-      const transformedNews = newsTransform(news as any);
-  
-      // Return the transformed news data in the response
-      return res.json(transformedNews);
-    } catch (error) {
-      // If there is an error, return a 500 status with the error message
-      return res.status(500).json({ message: 'Error retrieving news article', error });
+  try {
+    const { id } = req.params; // Get the `id` from the request params
+
+    // Fetch the news article by ID and include user information
+    const news = await newsModel.findOne({
+      where: { id: id },
+      include: [
+        {
+          model: userModel,
+          as: 'user', // Ensure this matches the alias in your association
+          attributes: ['id', 'firstName', 'email'] // Only select these user attributes
+        },
+        {
+          model: categoryModel,
+          as: 'categories', // Assuming there's an association for categories
+          attributes: ['id', 'name'],
+          through: { attributes: [] }, // Hide any join table attributes if using many-to-many relation
+        }
+      ]
+    });
+
+    if (!news) {
+      // Return a 404 response if the news article is not found
+      return res.status(404).json({ message: 'News article not found' });
     }
-  };
+
+    // Transform the news data using the `newsTransform` function
+    const transformedNews = newsTransform(news as any);
+
+    // Return the transformed news data in the response
+    return res.json(transformedNews);
+  } catch (error) {
+    console.error('Error retrieving news article:', error);
+    // Return a 500 status with the error message
+    return res.status(500).json({ message: 'Error retrieving news article', error });
+  }
+};
 
 // Update a specific news article by ID
 export const newsUpdate = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const { id } = req.params;
-      const user = req.user;
-  
-      // Find the news by ID
-      const news = await newsModel.findOne({
-        where: { id: id }
-      });
-  
-      if (!news) {
-        return res.status(404).json({ status: 404, message: "News not found" });
-      }
-  
-      // Check if the logged-in user is authorized to update the news (only the owner can update)
-      if (user.id !== news.userId) {
-        return res.status(403).json({ status: 403, message: "Unauthorized" });
-      }
+  try {
+    const { id } = req.params;
+    const user = req.user;
 
-      // Validate the request body using Zod
-      const body=req.body;
-      if(body.title==null){body.title=news.title}
-      if(body.description==null){body.description=news.description}
-    //   if(body.categoryId==null){body.categoryId=news.categoryId}
-      if(body.image==null){body.image=news.image}
-      body.userId=news.userId
+    // Find the news by ID
+    const news = await newsModel.findOne({ where: { id: id } });
 
-    console.log(body);
-
-      const payload = newsValidationSchema.parse(req.body);
-  
-      // Handle image upload if an image is provided
-      const image = req?.files?.image;
-      if (image) {
-        const message = imageValidator(image.size, image.mimetype);
-  
-        if (message !== null) {
-          return res.status(400).json({ status: 400, message: message });
-        }
-  
-        const imgExt = image.name.split(".").pop(); // Extract the file extension
-        const imageName = generateRandom() + "." + imgExt;
-        const uploadPath = process.cwd() + "/public/news/" + imageName;
-  
-        // Move the uploaded image to the specified path
-        image.mv(uploadPath, (err) => {
-          if (err) {
-            throw err;
-          }
-        });
-  
-        // Remove the old image if it exists
-        if (news.image) {
-          removeImage(news.image);
-        }
-  
-        // Add image name to payload
-        payload.image = imageName;
-      }
-  
-      // Update the news entry
-      await newsModel.update(payload, {
-        where: { id: id }
-      });
-  
-      return res.status(200).json({ status: 200, message: "News updated successfully" });
-    } catch (err) {
-      if (err instanceof Error) {
-       
-        return res.status(400).json({ status: 400, message: err.message });
-      } else if (err instanceof Error) {
-        return res.status(500).json({ status: 500, message: err.message });
-      }
-      return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+    if (!news) {
+      return res.status(404).json({ status: 404, message: "News not found" });
     }
-  };
+
+    // Check if the logged-in user is authorized to update the news (only the owner can update)
+    if (user.id !== news.userId) {
+      return res.status(403).json({ status: 403, message: "Unauthorized" });
+    }
+
+    // Prepare the request body for validation
+    const body = {
+      title: req.body.title || news.title,
+      description: req.body.description || news.description,
+      image: news.image, // Set image to existing one by default
+      userId: news.userId,
+      categoryIds: req.body.categoryIds || news.categoryIds, // If categories need to be updated
+    };
+
+    // Validate the request body using Zod
+    const validatedPayload = newsValidationSchema.safeParse(body);
+    if (!validatedPayload.success) {
+      return res.status(400).json({ message: "Validation failed", errors: validatedPayload.error.format() });
+    }
+
+    const payload = validatedPayload.data;
+
+    // Handle image upload if an image is provided
+    const image = req?.files?.image;
+    if (image) {
+      const message = imageValidator(image.size, image.mimetype);
+      if (message !== null) {
+        return res.status(400).json({ status: 400, message: message });
+      }
+
+      const imgExt = image.name.split(".").pop(); // Extract the file extension
+      const imageName = generateRandom() + "." + imgExt;
+      const uploadPath = process.cwd() + "/public/news/" + imageName;
+
+      // Move the uploaded image to the specified path
+      await image.mv(uploadPath);
+
+      // Remove the old image if it exists
+      if (news.image) {
+        removeImage(news.image);
+      }
+
+      // Add the new image name to payload
+      payload.image = imageName;
+    }
+
+    // Update the news entry in the database
+    await newsModel.update(payload, { where: { id: id } });
+
+    // If there are category updates, handle them here
+    if (req.body.categoryIds) {
+      const categoryIds = req.body.categoryIds.split(',').map((id: string) => parseInt(id));
+      await news.setCategories(categoryIds);
+    }
+
+    return res.status(200).json({ status: 200, message: "News updated successfully" });
+  } catch (err) {
+    console.error(err);
+
+    if (err instanceof Error) {
+      return res.status(400).json({ status: 400, message: err.message });
+    }
+    return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+  }
+};
+
 // Delete a specific news article by ID
 export const newsDestroy = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const { id } = req.params;
-      const { user } = req;
-  
-      // Find the news entry by ID
-      const news = await newsModel.findOne({
-        where: { id: id }
-      });
-  
-      // Check if the news exists
-      if (!news) {
-        return res.status(404).json({ status: 404, message: "News not found" });
-      }
-  
-      // Check if the logged-in user is authorized to delete the news (only the owner can delete)
-      if (user.id !== news.userId) {
-        return res.status(403).json({ status: 403, message: "Unauthorized" });
-      }
-  
-      // Optionally remove the associated image from the server
-      if (news.image) {
+  try {
+    const { id } = req.params;
+    const { user } = req;
+
+    // Find the news entry by ID
+    const news = await newsModel.findOne({
+      where: { id: id }
+    });
+
+    // Check if the news exists
+    if (!news) {
+      return res.status(404).json({ status: 404, message: "News not found" });
+    }
+
+    // Check if the logged-in user is authorized to delete the news (only the owner can delete)
+    if (user.id !== news.userId) {
+      return res.status(403).json({ status: 403, message: "Unauthorized" });
+    }
+
+    // Remove the associated image from the server, if it exists
+    if (news.image) {
+      try {
         removeImage(news.image); // Assuming you have a function to remove images
+      } catch (err) {
+        console.error("Error removing image:", err);
       }
-  
-      // Delete the news entry
-      await newsModel.destroy({
-        where: { id: id }
-      });
-  
-      return res.status(200).json({ status: 200, message: "News deleted successfully" });
-    } catch (err) {
-      // Type narrowing to handle 'unknown' type
-      if (err instanceof Error) {
-        console.error("Error:", err.message);
-        return res.status(500).json({
-          status: 500,
-          message: err.message || "An error occurred"
-        });
-      }
-  
-      // Fallback for cases where the error isn't an instance of Error
+    }
+
+    // Delete the news entry
+    await newsModel.destroy({
+      where: { id: id }
+    });
+
+    // Log successful deletion
+    console.log(`News article with ID ${id} deleted by user ${user.id}`);
+
+    return res.status(200).json({ status: 200, message: "News deleted successfully" });
+  } catch (err) {
+    // Type narrowing to handle 'unknown' type
+    if (err instanceof Error) {
+      console.error("Error:", err.message);
       return res.status(500).json({
         status: 500,
-        message: "An unknown error occurred"
+        message: err.message || "An error occurred"
       });
     }
-  };
+
+    // Fallback for cases where the error isn't an instance of Error
+    return res.status(500).json({
+      status: 500,
+      message: "An unknown error occurred"
+    });
+  }
+};

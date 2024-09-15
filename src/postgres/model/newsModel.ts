@@ -14,6 +14,7 @@ interface NewsAttributes {
 interface NewsCreationAttributes extends Optional<NewsAttributes, 'id'> {}
 
 interface NewsInstance extends Model<NewsAttributes, NewsCreationAttributes>, NewsAttributes {
+    categoryIds: any;
     addCategories: (categoryIds: number[]) => Promise<void>; // Declare addCategories method
     setCategories: (categoryIds: number[]) => Promise<void>;
     // Assuming categoryModel is imported

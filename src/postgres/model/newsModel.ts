@@ -1,17 +1,24 @@
-import { DataTypes, Model, Sequelize, ModelCtor } from 'sequelize';
-
+import { DataTypes, Model, Sequelize, ModelCtor, Optional } from 'sequelize';
+import { categoryModel } from '../postgres';
 interface NewsAttributes {
   id?: number;
   title: string;
   description: string;
   image?: string;
-  categoryId: number;
+//   categoryId: number;
   userId: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-interface NewsInstance extends Model<NewsAttributes>, NewsAttributes {}
+interface NewsCreationAttributes extends Optional<NewsAttributes, 'id'> {}
+
+interface NewsInstance extends Model<NewsAttributes, NewsCreationAttributes>, NewsAttributes {
+    categoryIds: any;
+    addCategories: (categoryIds: number[]) => Promise<void>; // Declare addCategories method
+    setCategories: (categoryIds: number[]) => Promise<void>;
+    // Assuming categoryModel is imported
+  }
 
 export const createNewsModel = (sequelize: Sequelize): ModelCtor<NewsInstance> => {
   const News = sequelize.define<NewsInstance>('News', {
@@ -32,19 +39,20 @@ export const createNewsModel = (sequelize: Sequelize): ModelCtor<NewsInstance> =
       type: DataTypes.STRING(255),
       allowNull: true
     },
-    categoryId: {
-      type: DataTypes.INTEGER,
-      references: {
-        model: 'category',
-        key: 'id'
-      }
-    },
+        // categoryId: {
+    //   type: DataTypes.INTEGER,
+    //   references: {
+    //     model: 'category',
+    //     key: 'id'
+    //   }
+    // },
     userId: {
       type: DataTypes.INTEGER,
       references: {
         model: 'Users',
         key: 'id'
       }
+      , onDelete: 'CASCADE' 
     },
     createdAt: {
       type: DataTypes.DATE,

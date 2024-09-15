@@ -6,15 +6,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const authenticate_1 = __importDefault(require("../authenticate/authenticate"));
 const newsController_1 = require("../controller/newsController");
+const typedAuthMiddleware = authenticate_1.default;
+const typedStore = newsController_1.newsStore;
+const typedDestroy = newsController_1.newsDestroy;
+const typedUpdate = newsController_1.newsUpdate;
 const newsRouter = express_1.default.Router();
 // List all news
 newsRouter.get("/", newsController_1.newsIndex);
 // Create a new news article (auth required)
-newsRouter.post("/", authenticate_1.default, newsController_1.newsStore);
+newsRouter.post("/", typedAuthMiddleware, typedStore);
 // Get a specific news article by ID
 newsRouter.get("/:id", newsController_1.newsShow);
 // Update a specific news article by ID (auth required)
-newsRouter.put("/:id", authenticate_1.default, newsController_1.newsUpdate);
+newsRouter.put("/:id", authenticate_1.default, typedUpdate);
 // Delete a specific news article by ID (auth required)
-newsRouter.delete("/:id", authenticate_1.default, newsController_1.newsDestroy);
+newsRouter.delete("/:id", authenticate_1.default, typedDestroy);
 exports.default = newsRouter;

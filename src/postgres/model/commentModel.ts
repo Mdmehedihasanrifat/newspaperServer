@@ -26,14 +26,16 @@ export const createCommentModel = (sequelize: Sequelize): ModelCtor<CommentInsta
       references: {
         model: 'Users', // Ensure this matches the actual model name
         key: 'id'
-      }
+      },
+      onDelete: 'CASCADE' 
     },
     newsId: {
       type: DataTypes.INTEGER,
       references: {
         model: 'News', // Ensure this matches the actual model name
         key: 'id'
-      }
+      },
+      onDelete: 'CASCADE' 
     },
     comment: {
       type: DataTypes.TEXT,

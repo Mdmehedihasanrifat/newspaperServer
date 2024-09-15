@@ -22,7 +22,9 @@ export const generateRandom = (): string => {
 export const getImageUrl = (imgName: string): string => {
   return `${process.env.APP_URL}news/${imgName}`;
 };
-
+export const getProfileImageUrl = (imgName: string): string => {
+  return `${process.env.APP_URL}images/${imgName}`;
+};
 export const removeImage = (imgName: string): void => {
   const path = `${process.cwd()}/public/news/${imgName}`;
   if (fs.existsSync(path)) {

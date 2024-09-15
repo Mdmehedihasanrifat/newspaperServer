@@ -1,4 +1,4 @@
-import { getImageUrl } from "../utils/helper.js";
+import { getImageUrl, getProfileImageUrl } from "../utils/helper";
 
 // Define the types for your news and user objects
 interface User {
@@ -38,7 +38,7 @@ export const newsTransform = (news: News): TransformedNews => {
       id: news.user?.id, // Use optional chaining to avoid errors if user is undefined
       name: news.user?.firstName,
       profile: news.user?.profile
-        ? getImageUrl(news.user.profile)
+        ? getProfileImageUrl(news.user.profile)
         : "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.vecteezy.com%2Ffree-vector%2Fprofile-avatar&psig=AOvVaw1tqVhpAdxSIWMi59j-165o&ust=1726065127132000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCOCT7ufLuIgDFQAAAAAdAAAAABAE"
     }
   };

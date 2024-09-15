@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.removeImage = exports.getImageUrl = exports.generateRandom = exports.bytesToMb = exports.imageValidator = void 0;
+exports.removeImage = exports.getProfileImageUrl = exports.getImageUrl = exports.generateRandom = exports.bytesToMb = exports.imageValidator = void 0;
 const filesystem_1 = require("../config/filesystem");
 const uuid_1 = require("uuid");
 const fs_1 = __importDefault(require("fs"));
@@ -29,6 +29,10 @@ const getImageUrl = (imgName) => {
     return `${process.env.APP_URL}news/${imgName}`;
 };
 exports.getImageUrl = getImageUrl;
+const getProfileImageUrl = (imgName) => {
+    return `${process.env.APP_URL}images/${imgName}`;
+};
+exports.getProfileImageUrl = getProfileImageUrl;
 const removeImage = (imgName) => {
     const path = `${process.cwd()}/public/news/${imgName}`;
     if (fs_1.default.existsSync(path)) {

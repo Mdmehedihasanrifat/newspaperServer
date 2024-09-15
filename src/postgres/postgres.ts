@@ -1,5 +1,7 @@
 import { Sequelize } from "sequelize";
 import { createUserModel } from "./model/userModel";
+import { createNewsModel } from "./model/newsModel";
+import { createCommentModel } from "./model/commentModel";
 
 const sequelize = new Sequelize('postgres', 'postgres', 'h1997asaN#@', {
     host: 'localhost',
@@ -8,6 +10,17 @@ const sequelize = new Sequelize('postgres', 'postgres', 'h1997asaN#@', {
   
 
   const userModel=createUserModel(sequelize);
+  const newsModel=createNewsModel(sequelize);
+  const commentModel=createCommentModel(sequelize)
+
+
+  userModel.hasMany(newsModel, { foreignKey: 'userId', as: 'news' });
+ newsModel.belongsTo(userModel, { foreignKey: 'userId', as: 'user' });
+ userModel.hasMany(commentModel, { foreignKey: 'userId' });
+ commentModel.belongsTo(userModel, { foreignKey: 'userId' });
+
+newsModel.hasMany(commentModel, { foreignKey: 'newsId' });
+commentModel.belongsTo(commentModel, { foreignKey: 'newsId' });
 
   const connection = async () => {
     try {
@@ -19,4 +32,4 @@ const sequelize = new Sequelize('postgres', 'postgres', 'h1997asaN#@', {
     }
   };
 
-  export { connection,userModel}
+  export { connection,userModel,newsModel,commentModel}

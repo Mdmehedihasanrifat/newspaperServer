@@ -28,24 +28,30 @@ const verifyToken = (token, secret) => {
 const authMiddleware = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const authHeader = req.headers.authorization;
     if (!authHeader || authHeader === 'null') {
-        return res.status(401).json({ status: 401, messages: "Unauthorized" });
+        return res.status(401).json({ status: 401, message: "Unauthorized" });
     }
     const token = authHeader.split(" ")[1];
+    if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ status: 500, message: "Internal server error" });
+    }
     try {
-        // Use the verifyToken helper function to verify the JWT token asynchronously
         const decoded = yield verifyToken(token, process.env.JWT_SECRET);
-        // Find the user in the database using the decoded email
-        const user = yield postgres_1.userModel.findOne({
-            where: { email: decoded.email },
-        });
-        if (!user) {
-            return res.status(401).json({ status: 401, messages: "Unauthorized" });
+        if (typeof decoded === 'object' && 'email' in decoded) {
+            const user = yield postgres_1.userModel.findOne({
+                where: { email: decoded.email },
+            });
+            if (!user) {
+                return res.status(401).json({ status: 401, message: "Unauthorized" });
+            }
+            req.user = user;
+            next();
         }
-        req.user = user; // Attach the user object to the request
-        next();
+        else {
+            return res.status(401).json({ status: 401, message: "Unauthorized" });
+        }
     }
     catch (err) {
-        return res.status(401).json({ status: 401, messages: "Unauthorized" });
+        return res.status(401).json({ status: 401, message: "Unauthorized" });
     }
 });
 exports.default = authMiddleware;

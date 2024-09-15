@@ -9,15 +9,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.userModel = exports.connection = void 0;
+exports.newsModel = exports.userModel = exports.connection = void 0;
 const sequelize_1 = require("sequelize");
 const userModel_1 = require("./model/userModel");
+const newsModel_1 = require("./model/newsModel");
 const sequelize = new sequelize_1.Sequelize('postgres', 'postgres', 'h1997asaN#@', {
     host: 'localhost',
     dialect: 'postgres'
 });
 const userModel = (0, userModel_1.createUserModel)(sequelize);
 exports.userModel = userModel;
+const newsModel = (0, newsModel_1.createNewsModel)(sequelize);
+exports.newsModel = newsModel;
+userModel.hasMany(newsModel, { foreignKey: 'userId', as: 'news' });
+newsModel.belongsTo(userModel, { foreignKey: 'userId', as: 'user' });
 const connection = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield sequelize.authenticate();

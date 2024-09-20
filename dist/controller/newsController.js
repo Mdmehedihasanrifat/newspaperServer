@@ -9,79 +9,81 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.newsDestroy = exports.newsUpdate = exports.newsShow = exports.newsStore = exports.newsIndex = void 0;
+exports.newsSearch = exports.newsDestroy = exports.newsUpdate = exports.newsShow = exports.newsStore = exports.newsIndex = void 0;
 const postgres_1 = require("../postgres/postgres"); // Adjust the import path to your actual model
 const transform_1 = require("../transform/transform");
 const newsdataValidation_1 = require("../validation/newsdataValidation");
 const helper_1 = require("../utils/helper");
+const sequelize_1 = require("sequelize");
 // Get all news articles
 const newsIndex = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    let { query, params } = req;
+    const userId = query === null || query === void 0 ? void 0 : query.userId;
+    const userIdNumber = parseInt(userId);
     // Set default pagination values
-    let page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    let limit = Math.max(Math.min(parseInt(req.query.limit, 10) || 10, 100), 1);
+    let page = Math.max(parseInt(query.page, 10) || 1, 1);
+    let limit = Math.max(Math.min(parseInt(query.limit, 50) || 20, 100), 1);
     // Calculate pagination offset
     const skip = (page - 1) * limit;
-    try {
-        // Fetch news with pagination, user, and categories
-        const news = yield postgres_1.newsModel.findAll({
-            limit,
-            offset: skip,
-            include: [
-                {
-                    model: postgres_1.userModel,
-                    as: "user",
-                    attributes: ["id", "firstName", "profile"],
-                },
-                {
-                    model: postgres_1.categoryModel,
-                    as: "categories", // Assuming you have a relation defined with this alias
-                    attributes: ["id", "name"],
-                    through: { attributes: [] } // Hide the junction table data if it's a many-to-many relationship
-                },
-            ],
-            attributes: ["id", "title", "description", "image", "createdAt"],
-        });
-        // Transform news data
-        const newsTransformed = news.map(item => (0, transform_1.newsTransform)(item));
-        // Count total news items
-        const totalNews = yield postgres_1.newsModel.count();
-        const totalPages = Math.ceil(totalNews / limit);
-        // Return paginated news with metadata and categories
-        return res.json({
-            status: 200,
-            news: newsTransformed,
-            metadata: {
-                totalPages,
-                currentPage: page,
-                limit,
+    const news = yield postgres_1.newsModel.findAll(Object.assign(Object.assign({}, (userId && {
+        where: {
+            userId: userId, // Match the news with the userId
+        }
+    })), { attributes: ["id", "title", "description", "image", "createdAt"], include: [
+            {
+                model: postgres_1.userModel,
+                as: "user",
+                attributes: ["id", "firstName", "profile"],
             },
-        });
+            {
+                model: postgres_1.categoryModel,
+                as: "categories", // Assuming you have a relation defined with this alias
+                attributes: ["id", "name"],
+                through: { attributes: [] }, // Hide the junction table data if it's a many-to-many relationship
+            },
+        ], order: [["createdAt", "DESC"]] }));
+    // Transform news data
+    const newsTransformed = news.map((item) => (0, transform_1.newsTransform)(item));
+    // Count total news items
+    let UserNews;
+    if (userId) {
+        UserNews = news.length;
     }
-    catch (error) {
-        // Log and return error response
-        console.error('Error retrieving news:', error);
-        return res.status(500).json({
-            status: 500,
-            message: 'Error retrieving news articles',
-        });
-    }
+    const totalNews = yield postgres_1.newsModel.count();
+    const totalPages = Math.ceil(totalNews / limit);
+    // Return paginated news with metadata and categories
+    return res.json({
+        news: newsTransformed,
+        totalNews: UserNews ? UserNews : totalNews,
+        currentPage: page,
+        limit: limit,
+    });
 });
 exports.newsIndex = newsIndex;
+// const delAsync = promisify(redisCache.del).bind(redisCache);
 const newsStore = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const user = req.user; // Assuming `req.user` is populated by your auth middleware
         let body = req.body;
+        console.log(body);
         // Attach userId to the request body
         body.userId = user.id;
         let categoryIds = [];
         if (body.categoryIds) {
-            categoryIds = body.categoryIds.split(',').map((id) => parseInt(id));
+            categoryIds = body.categoryIds
+                .split(",")
+                .map((id) => parseInt(id));
         }
         // Validate the request body using Zod
         body.categoryIds = categoryIds;
         const validator = newsdataValidation_1.newsValidationSchema.safeParse(body);
         if (!validator.success) {
-            return res.status(400).json({ message: "Validation failed", errors: validator.error.format() });
+            return res
+                .status(400)
+                .json({
+                message: "Validation failed",
+                errors: validator.error.format(),
+            });
         }
         const payload = validator.data;
         // Check if an image was uploaded
@@ -95,7 +97,7 @@ const newsStore = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return res.status(400).json({ message: messages });
         }
         // Handle the file upload
-        const imgExt = image.name.split('.').pop(); // Get the file extension
+        const imgExt = image.name.split(".").pop(); // Get the file extension
         const imageName = (0, helper_1.generateRandom)() + "." + imgExt; // Generate a random image name
         const uploadPath = process.cwd() + "/public/news/" + imageName;
         // Move the uploaded image to the specified path
@@ -106,7 +108,7 @@ const newsStore = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         // Create the news entry in the database
         const createdNews = yield postgres_1.newsModel.create(payload);
         const newsWithAssociations = yield createdNews.reload({
-            include: [{ model: postgres_1.categoryModel, as: 'categories' }]
+            include: [{ model: postgres_1.categoryModel, as: "categories" }],
         });
         // Associate categories with the news entry
         if (categoryIds.length > 0) {
@@ -129,29 +131,38 @@ exports.newsStore = newsStore;
 const newsShow = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params; // Get the `id` from the request params
-        // Fetch news with the specific ID and include user information
+        // Fetch the news article by ID and include user information
         const news = yield postgres_1.newsModel.findOne({
             where: { id: id },
             include: [
                 {
                     model: postgres_1.userModel,
-                    as: 'user', // Match the alias from the association
-                    attributes: ['id', 'firstName', 'email'] // Only select these user attributes
-                }
-            ]
+                    as: "user", // Ensure this matches the alias in your association
+                    attributes: ["id", "firstName", "email"], // Only select these user attributes
+                },
+                {
+                    model: postgres_1.categoryModel,
+                    as: "categories", // Assuming there's an association for categories
+                    attributes: ["id", "name"],
+                    through: { attributes: [] }, // Hide any join table attributes if using many-to-many relation
+                },
+            ],
         });
         if (!news) {
-            // If no news article is found, return a 404 status
-            return res.status(404).json({ message: 'News article not found' });
+            // Return a 404 response if the news article is not found
+            return res.status(404).json({ message: "News article not found" });
         }
-        // Transform the news using the `newsTransform` function
+        // Transform the news data using the `newsTransform` function
         const transformedNews = (0, transform_1.newsTransform)(news);
         // Return the transformed news data in the response
         return res.json(transformedNews);
     }
     catch (error) {
-        // If there is an error, return a 500 status with the error message
-        return res.status(500).json({ message: 'Error retrieving news article', error });
+        console.error("Error retrieving news article:", error);
+        // Return a 500 status with the error message
+        return res
+            .status(500)
+            .json({ message: "Error retrieving news article", error });
     }
 });
 exports.newsShow = newsShow;
@@ -162,9 +173,7 @@ const newsUpdate = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         const { id } = req.params;
         const user = req.user;
         // Find the news by ID
-        const news = yield postgres_1.newsModel.findOne({
-            where: { id: id }
-        });
+        const news = yield postgres_1.newsModel.findOne({ where: { id: id } });
         if (!news) {
             return res.status(404).json({ status: 404, message: "News not found" });
         }
@@ -172,21 +181,26 @@ const newsUpdate = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         if (user.id !== news.userId) {
             return res.status(403).json({ status: 403, message: "Unauthorized" });
         }
+        console.log(req.body);
+        // Prepare the request body for validation
+        const body = {
+            title: req.body.title || news.title,
+            description: req.body.description || news.description,
+            image: news.image, // Set image to existing one by default
+            userId: news.userId,
+            categoryIds: req.body.categoryIds || news.categoryIds, // If categories need to be updated
+        };
         // Validate the request body using Zod
-        const body = req.body;
-        if (body.title == null) {
-            body.title = news.title;
+        const validatedPayload = newsdataValidation_1.newsValidationSchema.safeParse(body);
+        if (!validatedPayload.success) {
+            return res
+                .status(400)
+                .json({
+                message: "Validation failed",
+                errors: validatedPayload.error.format(),
+            });
         }
-        if (body.description == null) {
-            body.description = news.description;
-        }
-        //   if(body.categoryId==null){body.categoryId=news.categoryId}
-        if (body.image == null) {
-            body.image = news.image;
-        }
-        body.userId = news.userId;
-        console.log(body);
-        const payload = newsdataValidation_1.newsValidationSchema.parse(req.body);
+        const payload = validatedPayload.data;
         // Handle image upload if an image is provided
         const image = (_a = req === null || req === void 0 ? void 0 : req.files) === null || _a === void 0 ? void 0 : _a.image;
         if (image) {
@@ -198,32 +212,35 @@ const newsUpdate = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             const imageName = (0, helper_1.generateRandom)() + "." + imgExt;
             const uploadPath = process.cwd() + "/public/news/" + imageName;
             // Move the uploaded image to the specified path
-            image.mv(uploadPath, (err) => {
-                if (err) {
-                    throw err;
-                }
-            });
+            yield image.mv(uploadPath);
             // Remove the old image if it exists
             if (news.image) {
                 (0, helper_1.removeImage)(news.image);
             }
-            // Add image name to payload
+            // Add the new image name to payload
             payload.image = imageName;
         }
-        // Update the news entry
-        yield postgres_1.newsModel.update(payload, {
-            where: { id: id }
-        });
-        return res.status(200).json({ status: 200, message: "News updated successfully" });
+        // Update the news entry in the database
+        yield postgres_1.newsModel.update(payload, { where: { id: id } });
+        // If there are category updates, handle them here
+        if (req.body.categoryIds) {
+            const categoryIds = req.body.categoryIds
+                .split(",")
+                .map((id) => parseInt(id));
+            yield news.setCategories(categoryIds);
+        }
+        return res
+            .status(200)
+            .json({ status: 200, message: "News updated successfully" });
     }
     catch (err) {
+        console.error(err);
         if (err instanceof Error) {
             return res.status(400).json({ status: 400, message: err.message });
         }
-        else if (err instanceof Error) {
-            return res.status(500).json({ status: 500, message: err.message });
-        }
-        return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+        return res
+            .status(500)
+            .json({ status: 500, message: "Unknown error occurred" });
     }
 });
 exports.newsUpdate = newsUpdate;
@@ -234,7 +251,7 @@ const newsDestroy = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const { user } = req;
         // Find the news entry by ID
         const news = yield postgres_1.newsModel.findOne({
-            where: { id: id }
+            where: { id: id },
         });
         // Check if the news exists
         if (!news) {
@@ -244,15 +261,24 @@ const newsDestroy = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         if (user.id !== news.userId) {
             return res.status(403).json({ status: 403, message: "Unauthorized" });
         }
-        // Optionally remove the associated image from the server
+        // Remove the associated image from the server, if it exists
         if (news.image) {
-            (0, helper_1.removeImage)(news.image); // Assuming you have a function to remove images
+            try {
+                (0, helper_1.removeImage)(news.image); // Assuming you have a function to remove images
+            }
+            catch (err) {
+                console.error("Error removing image:", err);
+            }
         }
         // Delete the news entry
         yield postgres_1.newsModel.destroy({
-            where: { id: id }
+            where: { id: id },
         });
-        return res.status(200).json({ status: 200, message: "News deleted successfully" });
+        // Log successful deletion
+        console.log(`News article with ID ${id} deleted by user ${user.id}`);
+        return res
+            .status(200)
+            .json({ status: 200, message: "News deleted successfully" });
     }
     catch (err) {
         // Type narrowing to handle 'unknown' type
@@ -260,14 +286,62 @@ const newsDestroy = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             console.error("Error:", err.message);
             return res.status(500).json({
                 status: 500,
-                message: err.message || "An error occurred"
+                message: err.message || "An error occurred",
             });
         }
         // Fallback for cases where the error isn't an instance of Error
         return res.status(500).json({
             status: 500,
-            message: "An unknown error occurred"
+            message: "An unknown error occurred",
         });
     }
 });
 exports.newsDestroy = newsDestroy;
+// Search for news articles based on a query parameter
+const newsSearch = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { query } = req.query; // Get the search query from the request
+        console.log(query);
+        if (!query || typeof query !== "string") {
+            return res.status(400).json({ message: "Invalid search query" });
+        }
+        // Debugging: Log the search query
+        console.log("Search Query:", query);
+        // Use a case-insensitive search for news titles and descriptions
+        const news = yield postgres_1.newsModel.findAll({
+            where: {
+                [sequelize_1.Op.or]: [
+                    {
+                        title: {
+                            [sequelize_1.Op.iLike]: `%${query}%`, // Use iLike for case-insensitive search
+                        },
+                    },
+                    {
+                        description: {
+                            [sequelize_1.Op.iLike]: `%${query}%`,
+                        },
+                    },
+                ],
+            },
+            attributes: ["id", "title", "description", "image", "createdAt"],
+            order: [["createdAt", "DESC"]],
+        });
+        // Debugging: Log the SQL query generated by Sequelize
+        // You can enable Sequelize logging to see the SQL query in your console
+        if (news.length === 0) {
+            return res.status(404).json({ message: "No articles found" });
+        }
+        // Return the search results
+        return res.json({
+            status: 200,
+            news,
+        });
+    }
+    catch (error) {
+        console.error("Error searching news articles:", error);
+        return res
+            .status(500)
+            .json({ message: "Error searching news articles", error });
+    }
+});
+exports.newsSearch = newsSearch;

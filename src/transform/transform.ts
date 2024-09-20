@@ -14,6 +14,7 @@ interface News {
   image: string;
   user?: User;
   categories?: Array<{ id: number; name: string }>; // Ensure categories is an array
+  createdAt:string
 }
 
 // Define the return type for your transformation function
@@ -22,6 +23,7 @@ interface TransformedNews {
   headline: string;
   details: string;
   image: string;
+  createdAt:string
   author: {
     id?: number;
     name?: string;
@@ -39,6 +41,7 @@ export const newsTransform = (news: News): TransformedNews => {
     headline: news.title,
     details: news.description,
     image: getImageUrl(news.image),
+    createdAt:news.createdAt,
     author: {
       id: news.user?.id, // Use optional chaining to avoid errors if user is undefined
       name: news.user?.firstName,

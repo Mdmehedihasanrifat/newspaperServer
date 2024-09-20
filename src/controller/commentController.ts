@@ -47,8 +47,16 @@ export const listComments = async (req: Request, res: Response) => {
   
       // Get comments for the news item
       const comments = await commentModel.findAll({
-        where: { newsId: id } // Query by newsId, not by id
-      });
+        where: { newsId: id },
+        include: [
+          {
+            model: userModel,
+            as: 'user', // Ensure this matches the alias in your association
+            attributes: ['id', 'firstName', 'email'] // Only select these user attributes
+          },// Query by newsId, not by id
+        ]
+      },
+    );
   
       return res.status(200).json({ status: 200, comments });
     } catch (err) {
@@ -61,33 +69,40 @@ export const listComments = async (req: Request, res: Response) => {
 
 //Update comment
 export const updateComment = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.user.id; // Get the ID of the authenticated user
-      const { id } = req.params; // ID of the comment to update
-      const { comment } = req.body; // Updated comment text
-  
-      // Ensure the comment exists
-      const existingComment = await commentModel.findByPk(id);
-      if (!existingComment) {
-        return res.status(404).json({ status: 404, message: "Comment not found" });
+  try {
+    const userId = req.user.id; // Get the ID of the authenticated user
+    const { id, newsId } = req.params; // ID of the comment and news article
+    const { comment } = req.body; // Updated comment text
+
+    // Ensure the comment exists and belongs to the correct news article
+    const existingComment = await commentModel.findOne({
+      where: {
+        id: id,
+        newsId: newsId // Validate that the comment belongs to the given news article
       }
-  
-      // Check if the user is authorized to update the comment
-      if (existingComment.userId !== userId) {
-        return res.status(403).json({ status: 403, message: "Unauthorized" });
-      }
-  
-      // Update the comment
-      await existingComment.update({ comment });
-  
-      return res.status(200).json({ status: 200, comment: existingComment });
-    } catch (err) {
-      if (err instanceof Error) {
-        return res.status(500).json({ status: 500, message: err.message });
-      }
-      return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+    });
+
+    if (!existingComment) {
+      return res.status(404).json({ status: 404, message: "Comment not found or does not belong to this news article" });
     }
-  };
+
+    // Check if the user is authorized to update the comment
+    if (existingComment.userId !== userId) {
+      return res.status(403).json({ status: 403, message: "Unauthorized to update this comment" });
+    }
+
+    // Update the comment
+    await existingComment.update({ comment });
+
+    // Return the updated comment in the response
+    return res.status(200).json({ status: 200, comment: existingComment });
+  } catch (err) {
+    if (err instanceof Error) {
+      return res.status(500).json({ status: 500, message: err.message });
+    }
+    return res.status(500).json({ status: 500, message: "Unknown error occurred" });
+  }
+};
 
 
 

@@ -70,6 +70,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                     messages: "Login successfully",
                     access_token: `Bearer ${token}`,
                     user: {
+                        id: findUser.id,
                         email: findUser.email,
                         name: findUser.firstName, // Assuming `firstName` is a field in your database
                     },

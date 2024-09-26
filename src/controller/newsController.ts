@@ -1,120 +1,108 @@
 import { Request, Response } from "express";
-import { categoryModel, newsModel, userModel } from "../postgres/postgres"; // Adjust the import path to your actual model
+import { categoryModel, newsModel, userModel, visitorModel, visitorViewModel } from "../postgres/postgres"; // Adjust the import path to your actual model
 import { newsTransform } from "../transform/transform";
 import { newsValidationSchema } from "../validation/newsdataValidation";
 import { UploadedFile } from "express-fileupload";
 import { generateRandom, imageValidator, removeImage } from "../utils/helper";
 import { any } from "zod";
-import { Op } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 // import redisCache from '../config/redis.config';
-import { promisify } from "util";
-// Get all news articles
+import { esClient } from "../config/elasticSearch";
+import { getRecommendedNews, indexNewsInElasticsearch } from "./elasticSearch";
+import { emitNewsDeleted } from "..";
+
 export const newsIndex = async (req: Request, res: Response) => {
   const { query } = req;
   const userId = query?.userId as string;
-  const categoryQuery = query?.category as string; // This could be either a category ID or name
+  const search = query?.search as string;
+  const categoryQuery = query?.category as string;
 
-  // Convert userId to a number (if provided)
-  const userIdNumber = userId ? parseInt(userId) : undefined;
-
-  // Set default pagination values
   let page: number = Math.max(parseInt(query.page as string, 10) || 1, 1);
-  let limit: number = Math.max(
-    Math.min(parseInt(query.limit as string, 50) || 20, 100),
-    1
-  );
-
-  // Calculate pagination offset
+  let limit: number = Math.max(Math.min(parseInt(query.limit as string, 50) || 20, 100), 1);
   const skip = (page - 1) * limit;
 
-  // Create where clause based on userId
-  const whereClause: any = {};
-  if (userIdNumber) {
-    whereClause.userId = userIdNumber;
+  const must: any[] = [];
+  
+  // Add userId filter if provided
+  if (userId) {
+    must.push({ match: { "author.id": parseInt(userId) } });
   }
 
-  let categoryIdNumber: number | undefined;
-  try {
-    // If categoryQuery is a number, treat it as a category ID, otherwise treat it as a category name
-    if (!isNaN(Number(categoryQuery))) {
-      categoryIdNumber = parseInt(categoryQuery);
-    } else if (categoryQuery) {
-      // Find the category by name
-      const category = await categoryModel.findOne({
-        where: { name: categoryQuery },
-        attributes: ["id"],
-      });
-
-      if (category) {
-        categoryIdNumber = category.id;
-      } else {
-        // If no category found, return an empty result set
-        return res.json({
-          news: [],
-          totalNews: 0,
-          currentPage: page,
-          limit: limit,
-          categories: [],
-        });
+  // Add category filter if provided
+  if (categoryQuery) {
+    must.push({
+      nested: {
+        path: "categories",
+        query: {
+          match: { "categories.name": categoryQuery }
+        }
       }
+    });
+  }
+
+  // Add search logic if provided
+  if (search) {
+    must.push({
+      bool: {
+        should: [
+          { match_phrase_prefix: { headline: search } },
+          { match_phrase_prefix: { details: search } },
+        ]
+      }
+    });
+  }
+
+  // Build the final search query
+  const searchQuery = { 
+    bool: {
+      must
     }
+  };
 
-    // Fetch news items with optional userId and category filter
-    const news = await newsModel.findAll({
-      where: whereClause,
-      attributes: ["id", "title", "description", "image", "createdAt"],
-      include: [
-        {
-          model: userModel,
-          as: "user",
-          attributes: ["id", "firstName", "profile"],
-        },
-        {
-          model: categoryModel,
-          as: "categories", // Join the 'categories' table for filtering
-          attributes: ["id", "name"],
-          through: { attributes: [] }, // Hide the junction table data if it's a many-to-many relationship
-          where: categoryIdNumber ? { id: categoryIdNumber } : undefined, // Filter by category if provided
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-      offset: skip,
-      limit: limit,
+  try {
+    // Fetch news from Elasticsearch
+    const esResponse = await esClient.search({
+      index: "news",
+      body: {
+        query: searchQuery,
+        sort: [{ createdAt: { order: "desc" } }],
+        from: skip,
+        size: limit,
+        track_total_hits: true,
+      },
+
     });
 
-    const newsTransformed = news.map((item) => newsTransform(item as any));
+    const esNews = esResponse.hits.hits.map((hit: any) => ({
+      id: hit._id,
+      headline: hit._source.headline, // Adjust to your data structure
+      details: hit._source.details, // Adjust to your data structure
+      image: hit._source.image,
+      createdAt: hit._source.createdAt,
+      author: hit._source.author,
+      categories: hit._source.categories,
+    }));
 
-    // Calculate total news count (with userId and category filters if provided)
-    const totalNews = await newsModel.count({
-      where: whereClause,
-      include: categoryIdNumber
-        ? [
-            {
-              model: categoryModel,
-              as: "categories", // Join the 'categories' table for the count query as well
-              where: { id: categoryIdNumber },
-            },
-          ]
-        : [],
-    });
+    const totalNews =
+      typeof esResponse.hits.total === "number"
+        ? esResponse.hits.total
+        : esResponse.hits.total?.value || 0;
 
-    // Fetch all categories (for the dropdown or navigation)
-    const categories = await categoryModel.findAll({
-      attributes: ["id", "name"],
-    });
-
-    // Return the paginated news with metadata and all categories
     return res.json({
-      news: newsTransformed,
+      news: esNews,
       totalNews: totalNews,
       currentPage: page,
       limit: limit,
-      categories: categories, // Include all categories in the response
     });
   } catch (err: any) {
     return res.status(500).json({ message: err.message });
   }
 };
+
+
+
+
+
 
 // Create a new news article
 
@@ -127,7 +115,6 @@ interface AuthenticatedRequest extends Request {
     image?: UploadedFile; // Use UploadedFile for single file
   };
 }
-// const delAsync = promisify(redisCache.del).bind(redisCache);
 export const newsStore = async (
   req: AuthenticatedRequest,
   res: Response
@@ -135,25 +122,26 @@ export const newsStore = async (
   try {
     const user = req.user; // Assuming `req.user` is populated by your auth middleware
     let body = req.body;
-    console.log(body);
+
     // Attach userId to the request body
     body.userId = user.id;
+
+    // Handle category IDs (convert to array of numbers)
     let categoryIds: number[] = [];
     if (body.categoryIds) {
       categoryIds = body.categoryIds
         .split(",")
         .map((id: string) => parseInt(id));
     }
+
     // Validate the request body using Zod
     body.categoryIds = categoryIds;
     const validator = newsValidationSchema.safeParse(body);
     if (!validator.success) {
-      return res
-        .status(400)
-        .json({
-          message: "Validation failed",
-          errors: validator.error.format(),
-        });
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: validator.error.format(),
+      });
     }
     const payload = validator.data;
 
@@ -176,7 +164,7 @@ export const newsStore = async (
     const uploadPath = process.cwd() + "/public/news/" + imageName;
 
     // Move the uploaded image to the specified path
-    await image.mv(uploadPath); // Use the async/await pattern for image move
+    await image.mv(uploadPath);
 
     // Add the image name and user ID to the payload
     payload.image = imageName;
@@ -184,16 +172,45 @@ export const newsStore = async (
 
     // Create the news entry in the database
     const createdNews = await newsModel.create(payload);
-    const newsWithAssociations = await createdNews.reload({
-      include: [{ model: categoryModel, as: "categories" }],
-    });
 
     // Associate categories with the news entry
     if (categoryIds.length > 0) {
-      await newsWithAssociations.addCategories(categoryIds);
+      await createdNews.setCategories(categoryIds);
     }
 
-    // Respond with the created news entry
+    // Fetch the news with associations (user and categories)
+    const newsWithAssociations = await newsModel.findOne({
+      where: { id: createdNews.id },
+      include: [
+        { model: categoryModel, as: "categories" }, // Fetch categories
+        { model: userModel, as: "user" },  // Fetch the user who created the news
+      ],
+    });
+
+    // If newsWithAssociations is null, return an error
+    if (!newsWithAssociations) {
+      return res.status(404).json({ message: "News not found" });
+    }
+
+    // Prepare the payload for Elasticsearch indexing
+    const esPayload = {
+      id: newsWithAssociations.id,
+      headline: newsWithAssociations.title,
+      details: newsWithAssociations.description,
+      image: newsWithAssociations.image,
+      createdAt: newsWithAssociations.createdAt,
+      author: {
+        id: newsWithAssociations.user.id,
+        name: newsWithAssociations.user.firstName,
+      },
+      categories: newsWithAssociations.categories.map((category: any) => ({
+        id: category.id,
+        name: category.name,
+      })),
+    };
+
+  
+  indexNewsInElasticsearch(esPayload)
 
     return res.json(newsWithAssociations);
   } catch (err: any) {
@@ -206,51 +223,111 @@ export const newsStore = async (
   }
 };
 
+
 // Get a specific news article by ID
+
+// export const newsShow = async (
+//   req: Request,
+//   res: Response
+// ): Promise<Response> => {
+//   try {
+//     const { id } = req.params; 
+
+//     const news = await newsModel.findOne({
+//       where: { id: id },
+//       include: [
+//         {
+//           model: userModel,
+//           as: "user", 
+//           attributes: ["id", "firstName", "email"], 
+//         },
+//         {
+//           model: categoryModel,
+//           as: "categories", 
+//           attributes: ["id", "name"],
+//           through: { attributes: [] }, 
+//         },
+//       ],
+//     });
+
+//     if (!news) {
+  
+//       return res.json({ message: "News article not found" });
+//     }
+
+//     const transformedNews = newsTransform(news as any);
+
+
+//     return res.json(transformedNews);
+//   } catch (error) {
+//     console.error("Error retrieving news article:", error);
+    
+//     return res
+//       .status(500)
+//       .json({ message: "Error retrieving news article", error });
+//   }
+// };
+
+
 
 export const newsShow = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
   try {
-    const { id } = req.params; // Get the `id` from the request params
+    const { id } = req.params;
+    const visitor = (req as any).visitor; // Get the visitor from the middleware
 
-    // Fetch the news article by ID and include user information
+    // Find the news article by its id
     const news = await newsModel.findOne({
       where: { id: id },
       include: [
         {
           model: userModel,
-          as: "user", // Ensure this matches the alias in your association
-          attributes: ["id", "firstName", "email"], // Only select these user attributes
+          as: "user", 
+          attributes: ["id", "firstName", "email"],
         },
         {
           model: categoryModel,
-          as: "categories", // Assuming there's an association for categories
+          as: "categories",
           attributes: ["id", "name"],
-          through: { attributes: [] }, // Hide any join table attributes if using many-to-many relation
+          through: { attributes: [] },
         },
       ],
     });
 
     if (!news) {
-      // Return a 404 response if the news article is not found
       return res.status(404).json({ message: "News article not found" });
     }
 
-    // Transform the news data using the `newsTransform` function
+    // Track the visitor view count in the visitorViewModel
+    if (visitor) {
+            const [visitorView, created] = await visitorViewModel.findOrCreate({
+             where: { visitorId: visitor.id, newsId: news.id },
+             defaults: {
+               visitorId: visitor.id,
+                newsId: Number(news.id),
+                viewCount: 1
+              }
+            });
+      
+            if (!created) {
+              await visitorView.increment('viewCount');
+            }
+          }
+
+    // Transform the news object before sending it back
     const transformedNews = newsTransform(news as any);
 
-    // Return the transformed news data in the response
     return res.json(transformedNews);
   } catch (error) {
     console.error("Error retrieving news article:", error);
-    // Return a 500 status with the error message
     return res
       .status(500)
       .json({ message: "Error retrieving news article", error });
   }
 };
+
 
 export const newsUpdate = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -330,18 +407,48 @@ export const newsUpdate = async (req: AuthenticatedRequest, res: Response) => {
       await news.setCategories(categoryIds);
     }
 
-    return res
-      .status(200)
-      .json({ status: 200, message: "News updated successfully" });
+    // Fetch the updated news with associations (user and categories) for indexing
+    const updatedNews = await newsModel.findOne({
+      where: { id },
+      include: [
+        { model: categoryModel, as: "categories" }, // Fetch categories
+        { model: userModel, as: "user" }, // Fetch the user who created the news
+      ],
+    });
+
+    // If updatedNews is null, return an error
+    if (!updatedNews) {
+      return res.status(404).json({ message: "News not found" });
+    }
+
+    // Prepare the payload for Elasticsearch indexing
+    const esPayload = {
+      id: updatedNews.id,
+      headline: updatedNews.title,
+      details: updatedNews.description,
+      image: updatedNews.image,
+      createdAt: updatedNews.createdAt,
+      author: {
+        id: updatedNews.user.id,
+        name: updatedNews.user.firstName,
+      },
+      categories: updatedNews.categories.map((category: any) => ({
+        id: category.id,
+        name: category.name,
+      })),
+    };
+
+    // Index the updated news in Elasticsearch
+    await indexNewsInElasticsearch(esPayload);
+
+    return res.json({ message: "News updated successfully" });
   } catch (err: any) {
     console.error("Error:", err);
-    return res.status(400).json({
-      status: 400,
+    return res.status(500).json({
       message: err.message || "An error occurred",
     });
   }
 };
-
 // Delete a specific news article by ID
 export const newsDestroy = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -377,8 +484,16 @@ export const newsDestroy = async (req: AuthenticatedRequest, res: Response) => {
       where: { id: id },
     });
 
-    // Log successful deletion
-    console.log(`News article with ID ${id} deleted by user ${user.id}`);
+    // Delete the document from Elasticsearch
+    await esClient.delete({
+      index: 'news',
+      id: id.toString(), // Ensure the ID is a string
+    });
+
+
+      emitNewsDeleted(id)
+ 
+ 
 
     return res
       .status(200)
@@ -401,59 +516,190 @@ export const newsDestroy = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// Search for news articles based on a query parameter
-export const newsSearch = async (
-  req: Request,
-  res: Response
-): Promise<Response> => {
+
+
+export const recommendNews = async (req: Request, res: Response) => {
   try {
-    const { query } = req.query; // Get the search query from the request
+    const { id } = req.params; // Get the news id from the request params
+    const limit = 10; // Number of recommendations to return
 
-    console.log(query);
-    if (!query || typeof query !== "string") {
-      return res.status(400).json({ message: "Invalid search query" });
+    // Fetch the news article by ID and include its categories
+    const news = await newsModel.findOne({
+      where: { id: id },
+      include: [{
+        model: categoryModel,
+        as: 'categories',
+        through: { attributes: [] } // Ignore pivot table attributes
+      }]
+    });
+
+    if (!news) {
+      return res.status(404).json({ message: 'News article not found' });
     }
 
-    // Debugging: Log the search query
-    console.log("Search Query:", query);
+    // Extract category IDs from the news article
+    const categoryIds = news.categories.map((category: any) => category.id);
 
-    // Use a case-insensitive search for news titles and descriptions
-    const news = await newsModel.findAll({
+    if (categoryIds.length === 0) {
+      return res.status(200).json({ recommendations: [] });
+    }
+
+    // Get recommendations based on category overlap, excluding the original news article
+    const recommendations = await newsModel.findAll({
+      include: [
+        {
+          model: categoryModel,
+          as: 'categories',
+          where: { id: { [Op.in]: categoryIds } },
+          through: { attributes: [] }
+        },
+        {
+          model: userModel,
+          as: 'user',
+          attributes: ['id', 'firstName', 'email']
+        },
+        {
+          model: visitorViewModel,
+          as: 'visitorViews',
+          attributes: ['viewCount'], // Fetch view count directly
+          required: false // Optional join to keep articles without views
+        }
+      ],
       where: {
-        [Op.or]: [
-          {
-            title: {
-              [Op.iLike]: `%${query}%`, // Use iLike for case-insensitive search
-            },
-          },
-          {
-            description: {
-              [Op.iLike]: `%${query}%`,
-            },
-          },
-        ],
+        id: { [Op.not]: id } // Exclude the current news article from recommendations
       },
-      attributes: ["id", "title", "description", "image", "createdAt"],
-      order: [["createdAt", "DESC"]],
+      order: [
+        [{ model: visitorViewModel, as: 'visitorViews' }, 'viewCount', 'DESC'], 
+        ['createdAt', 'DESC']
+      ],
+      limit
     });
 
-    // Debugging: Log the SQL query generated by Sequelize
-    // You can enable Sequelize logging to see the SQL query in your console
+    // Transform the recommendations for response
+    // Transform the recommendations for response
+const transformedRecommendations = recommendations.map((news: any) => {
+  const viewCount = news.visitorViews.length > 0 ? news.visitorViews[0].viewCount : 0; // Fetch view count
+  return {
+    id: news.id,
+    headline: news.title,
+    details: news.description,
+    image: news.image,
+    createdAt: news.createdAt,
+    viewCount: viewCount, // Ensure view count is set correctly
+    author: {
+      id: news.user.id,
+      name: news.user.firstName,
+      email: news.user.email
+    },
+    categories: news.categories.map((category: any) => ({
+      id: category.id,
+      name: category.name
+    }))
+  };
+});
 
-    if (news.length === 0) {
-      return res.status(404).json({ message: "No articles found" });
-    }
-
-    // Return the search results
-    return res.json({
-      status: 200,
-      news,
+    // Sort recommendations by view count (secondary sort by createdAt)
+    transformedRecommendations.sort((a, b) => {
+      const viewCountA = a.viewCount || 0;
+      const viewCountB = b.viewCount || 0;
+      if (viewCountA !== viewCountB) {
+        return viewCountB - viewCountA; // Descending order
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); // Then sort by createdAt
     });
+
+    return res.status(200).json({ recommendations: transformedRecommendations });
   } catch (error) {
-    console.error("Error searching news articles:", error);
-    return res
-      .status(500)
-      .json({ message: "Error searching news articles", error });
+    console.error('Error recommending news:', error);
+    return res.status(500).json({ message: 'Error recommending news' });
   }
 };
+
+
+
+
+// export const recommendNews = async (req: Request, res: Response) => {
+//   try {
+//     const { id } = req.params; // Get the news ID from request params
+//     const limit = 10; // Number of recommendations to return
+
+//     // Fetch the news article by ID and include its categories
+//     const news = await newsModel.findOne({
+//       where: { id: id },
+//       include: [{
+//         model: categoryModel,
+//         as: 'categories',
+//         through: { attributes: [] } // Ignore pivot table attributes
+//       }]
+//     });
+
+//     if (!news) {
+//       return res.status(404).json({ message: 'News article not found' });
+//     }
+
+//     // Extract category IDs from the news article
+//     const categoryIds = news.categories.map((category: any) => category.id);
+
+//     if (categoryIds.length === 0) {
+//       return res.status(200).json({ recommendations: [] });
+//     }
+
+//     // Fetch recommendations based on highest viewCount, excluding the current news
+//     const recommendations = await newsModel.findAll({
+//       include: [
+//         {
+//           model: categoryModel,
+//           as: 'categories',
+//           where: { id: { [Op.in]: categoryIds } }, // Match articles in the same categories
+//           through: { attributes: [] }
+//         },
+//         {
+//           model: userModel,
+//           as: 'user',
+//           attributes: ['id', 'firstName', 'email'] // Include user details
+//         },
+//         {
+//           model: visitorViewModel,
+//           as: 'visitorViews', // Ensure this matches your Sequelize alias
+//           attributes: ['viewCount'] // Get view counts
+//         }
+//       ],
+//       where: {
+//         id: { [Op.not]: id } // Exclude the original news article
+//       },
+//       order: [
+//         [Sequelize.col('"visitorViews.viewCount"'), 'DESC'], // Order by viewCount
+//         ['createdAt', 'DESC'] // Fallback to createdAt if viewCount is equal
+//       ],
+//       limit
+//     });
+
+//     // Transform recommendations to expected output format
+//     const transformedRecommendations = recommendations.map((news: any) => ({
+//       id: news.id,
+//       headline: news.title,
+//       details: news.description,
+//       image: news.image,
+//       createdAt: news.createdAt,
+//       viewCount: news.visitorViews?.viewCount || 0, // Fallback to 0 if no viewCount
+//       author: {
+//         id: news.user.id,
+//         name: news.user.firstName,
+//         email: news.user.email
+//       },
+//       categories: news.categories.map((category: any) => ({
+//         id: category.id,
+//         name: category.name
+//       }))
+//     }));
+
+//     // Return recommendations
+//     return res.status(200).json({ recommendations: transformedRecommendations });
+
+//   } catch (error) {
+//     console.error('Error recommending news:', error);
+//     return res.status(500).json({ message: 'Error recommending news' });
+//   }
+// };
+
 

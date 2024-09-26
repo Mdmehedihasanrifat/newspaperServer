@@ -1,0 +1,273 @@
+// Get all news articles
+// export const newsIndex = async (req: Request, res: Response) => {
+//   const { query } = req;
+//   const userId = query?.userId as string;
+//   const search=query?.search as string;
+//   console.log(search)
+//   const categoryQuery = query?.category as string; // This could be either a category ID or name
+
+//   // Convert userId to a number (if provided)
+//   const userIdNumber = userId ? parseInt(userId) : undefined;
+
+//   // Set default pagination values
+//   let page: number = Math.max(parseInt(query.page as string, 10) || 1, 1);
+//   let limit: number = Math.max(
+//     Math.min(parseInt(query.limit as string, 50) || 20, 100),
+//     1
+//   );
+
+//   // Calculate pagination offset
+//   const skip = (page - 1) * limit;
+
+//   // Create where clause based on userId
+//   const whereClause: any = {};
+//   if (userIdNumber) {
+//     whereClause.userId = userIdNumber;
+//   }
+
+//   let categoryIdNumber: number | undefined;
+//   try {
+//     // If categoryQuery is a number, treat it as a category ID, otherwise treat it as a category name
+//     if (!isNaN(Number(categoryQuery))) {
+//       categoryIdNumber = parseInt(categoryQuery);
+//     } else if (categoryQuery) {
+//       // Find the category by name
+//       const category = await categoryModel.findOne({
+//         where: { name: categoryQuery },
+//         attributes: ["id"],
+//       });
+
+//       if (category) {
+//         categoryIdNumber = category.id;
+//       } else {
+//         // If no category found, return an empty result set
+//         return res.json({
+//           news: [],
+//           totalNews: 0,
+//           currentPage: page,
+//           limit: limit,
+//           categories: [],
+//         });
+//       }
+//     }
+
+//     // Fetch news items with optional userId and category filter
+//     const news = await newsModel.findAll({
+//       where: whereClause,
+//       attributes: ["id", "title", "description", "image", "createdAt"],
+//       include: [
+//         {
+//           model: userModel,
+//           as: "user",
+//           attributes: ["id", "firstName", "profile"],
+//         },
+//         {
+//           model: categoryModel,
+//           as: "categories", // Join the 'categories' table for filtering
+//           attributes: ["id", "name"],
+//           through: { attributes: [] }, // Hide the junction table data if it's a many-to-many relationship
+//           where: categoryIdNumber ? { id: categoryIdNumber } : undefined, // Filter by category if provided
+//         },
+//       ],
+//       order: [["createdAt", "DESC"]],
+//       offset: skip,
+//       limit: limit,
+//     });
+
+//     const newsTransformed = news.map((item) => newsTransform(item as any));
+
+//     // Calculate total news count (with userId and category filters if provided)
+//     const totalNews = await newsModel.count({
+//       where: whereClause,
+//       include: categoryIdNumber
+//         ? [
+//             {
+//               model: categoryModel,
+//               as: "categories", // Join the 'categories' table for the count query as well
+//               where: { id: categoryIdNumber },
+//             },
+//           ]
+//         : [],
+//     });
+
+//     // Fetch all categories (for the dropdown or navigation)
+//     const categories = await categoryModel.findAll({
+//       attributes: ["id", "name"],
+//     });
+
+//     // Return the paginated news with metadata and all categories
+//     return res.json({
+//       news: newsTransformed,
+//       totalNews: totalNews,
+//       currentPage: page,
+//       limit: limit,
+//       categories: categories, // Include all categories in the response
+//     });
+//   } catch (err: any) {
+//     return res.status(500).json({ message: err.message });
+//   }
+// };
+// export const newsIndex = async (req: Request, res: Response) => {
+//   const { query } = req;
+//   const userId = query?.userId as string;
+//   const search = query?.search as string;
+//   const categoryQuery = query?.category as string;
+
+//   // Convert userId to a number (if provided)
+//   const userIdNumber = userId ? parseInt(userId) : undefined;
+
+//   // Set default pagination values
+//   let page: number = Math.max(parseInt(query.page as string, 10) || 1, 1);
+//   let limit: number = Math.max(
+//     Math.min(parseInt(query.limit as string, 50) || 20, 100),
+//     1
+//   );
+
+//   // Calculate pagination offset
+//   const skip = (page - 1) * limit;
+
+//   // Create where clause based on userId and search query
+//   const whereClause: any = {};
+//   if (userIdNumber) {
+//     whereClause.userId = userIdNumber;
+//   }
+
+//   // Add search condition
+//   if (search) {
+//     whereClause[Op.or] = [
+//       { title: { [Op.like]: `%${search}%` } }, // Search in title
+//       { description: { [Op.like]: `%${search}%` } }, // Search in description
+//     ];
+//   }
+
+//   let categoryIdNumber: number | undefined;
+//   try {
+//     // Check category filter, if categoryQuery is a number treat it as category ID
+//     if (!isNaN(Number(categoryQuery))) {
+//       categoryIdNumber = parseInt(categoryQuery);
+//     } else if (categoryQuery) {
+//       // Find category by name
+//       const category = await categoryModel.findOne({
+//         where: { name: categoryQuery },
+//         attributes: ["id"],
+//       });
+
+//       if (category) {
+//         categoryIdNumber = category.id;
+//       } else {
+//         return res.json({
+//           news: [],
+//           totalNews: 0,
+//           currentPage: page,
+//           limit: limit,
+//         });
+//       }
+//     }
+
+//     // Fetch news items with optional userId, category, and search filters
+//     const news = await newsModel.findAll({
+//       where: whereClause,
+//       attributes: ["id", "title", "description", "image", "createdAt"],
+//       include: [
+//         {
+//           model: userModel,
+//           as: "user",
+//           attributes: ["id", "firstName", "profile"],
+//         },
+//         {
+//           model: categoryModel,
+//           as: "categories",
+//           attributes: ["id", "name"],
+//           through: { attributes: [] }, // Many-to-many relationship handling
+//           where: categoryIdNumber ? { id: categoryIdNumber } : undefined,
+//         },
+//       ],
+//       order: [["createdAt", "DESC"]],
+//       offset: skip,
+//       limit: limit,
+//     });
+
+//     const newsTransformed = news.map((item) => newsTransform(item as any));
+
+//     // Count total news with userId and category filters
+//     const totalNews = await newsModel.count({
+//       where: whereClause,
+//       include: categoryIdNumber
+//         ? [
+//             {
+//               model: categoryModel,
+//               as: "categories",
+//               where: { id: categoryIdNumber },
+//             },
+//           ]
+//         : [],
+//     });
+
+//     // Return paginated news and metadata
+//     return res.json({
+//       news: newsTransformed,
+//       totalNews: totalNews,
+//       currentPage: page,
+//       limit: limit,
+//     });
+//   } catch (err: any) {
+//     return res.status(500).json({ message: err.message });
+//   }
+// };
+
+
+
+
+
+
+
+
+
+
+export const newsSearch = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { query } = req.query; // Get the search query from the request
+
+    console.log(query);
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({ message: "Invalid search query" });
+    }
+
+
+
+const esResponse = await esClient.search({
+  index: 'news',
+  body: {
+    query: {
+      bool: {
+        should: [
+          { match_phrase_prefix: { title: query } },
+          { match_phrase_prefix: { description: query } },
+        ],
+      },
+    },
+  },
+});
+console.log("Test Response:", esResponse.hits.hits);
+  console.log(esResponse)
+    const news = esResponse.hits.hits.map((hit: any) => ({
+     
+      id: hit._id, 
+      title:hit._source.title,
+      description:hit._source.description
+    }));
+
+    if (news.length === 0) {
+      return res.json({ message: "No articles found" });
+    }
+
+    // Return the search results
+    return res.json({
+      status: 200,
+      news,
+    });
+  } catch (error) {
+    console.error("Error searching news articles:", error);
+    return res.status(500).json({ message: "Error searching news articles", error });
+  }
+};

@@ -16,6 +16,7 @@ const newsModel_1 = require("./model/newsModel");
 const commentModel_1 = require("./model/commentModel");
 const categoryModel_1 = require("./model/categoryModel");
 const categoryNewsModel_1 = require("./model/categoryNewsModel");
+const elasticSearch_1 = require("../controller/elasticSearch");
 const sequelize = new sequelize_1.Sequelize('postgres', 'postgres', 'h1997asaN#@', {
     host: 'localhost',
     dialect: 'postgres'
@@ -50,3 +51,4 @@ const connection = () => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.connection = connection;
+(0, elasticSearch_1.testElasticConnection)();

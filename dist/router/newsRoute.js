@@ -10,7 +10,7 @@ const typedAuthMiddleware = authenticate_1.default;
 const typedStore = newsController_1.newsStore;
 const typedDestroy = newsController_1.newsDestroy;
 const typedUpdate = newsController_1.newsUpdate;
-const typedSearch = newsController_1.newsSearch;
+// const typedSearch: RequestHandler = newsSearch as unknown as RequestHandler;
 const newsRouter = express_1.default.Router();
 // List all news
 newsRouter.get("/", newsController_1.newsIndex);
@@ -22,5 +22,6 @@ newsRouter.get("/:id", newsController_1.newsShow);
 newsRouter.put("/:id", authenticate_1.default, typedUpdate);
 // Delete a specific news article by ID (auth required)
 newsRouter.delete("/:id", authenticate_1.default, typedDestroy);
-newsRouter.get("/news/search", typedSearch);
+// newsRouter.get("/news/search",typedSearch);/
+newsRouter.get('/:id/recommend', newsController_1.recommendNews);
 exports.default = newsRouter;

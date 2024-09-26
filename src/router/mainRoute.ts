@@ -12,7 +12,10 @@ const mainRouter = express.Router();
 mainRouter.use('/auth', authRouter);
 mainRouter.use('/profile',profileRouter);
 mainRouter.use('/news',newsRouter);
+
 mainRouter.use("/news",commentRouter)
+
+
 mainRouter.use("/categories",categoryRouter)
 
 export default mainRouter;

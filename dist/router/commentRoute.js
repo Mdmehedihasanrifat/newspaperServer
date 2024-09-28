@@ -18,7 +18,7 @@ commentRouter.post('/:id/comments', typedAuthMiddleware, typedCommentStore);
 // List comments for a specific news item
 commentRouter.get('/:id/comments', typedCommnetlist);
 // Update a comment (auth required)
-commentRouter.put('/comments/:id', typedAuthMiddleware, typedCommentUpdate);
+commentRouter.put('/:newsId/comments/:id', typedAuthMiddleware, typedCommentUpdate);
 // Delete a comment (auth required)
-commentRouter.delete('/comments/:id', typedAuthMiddleware, typedCommentDelete);
+commentRouter.delete('/:newsId/comments/:id', typedAuthMiddleware, typedCommentDelete);
 exports.default = commentRouter;

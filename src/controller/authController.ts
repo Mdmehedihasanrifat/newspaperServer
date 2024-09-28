@@ -74,6 +74,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             messages: "Login successfully",
             access_token: `Bearer ${token}`,
             user: {
+              id:findUser.id,
               email: findUser.email,
               name: findUser.firstName, // Assuming `firstName` is a field in your database
             },

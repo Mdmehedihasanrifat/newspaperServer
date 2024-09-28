@@ -27,7 +27,7 @@ exports.createCategory = createCategory;
 const getAllCategories = (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const categories = yield postgres_1.categoryModel.findAll();
-        return res.status(200).json(categories);
+        return res.json(categories);
     }
     catch (err) {
         return res.status(500).json({ message: err.message });

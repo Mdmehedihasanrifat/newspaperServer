@@ -25,8 +25,15 @@ const generateRandom = () => {
     return (0, uuid_1.v4)();
 };
 exports.generateRandom = generateRandom;
+// Ensure you have the correct type for imgName
 const getImageUrl = (imgName) => {
-    return `${process.env.APP_URL}news/${imgName}`;
+    // Check if imgName is a valid URL (i.e., starts with 'http://' or 'https://')
+    if (imgName.startsWith('http://') || imgName.startsWith('https://')) {
+        return imgName; // Return the absolute URL directly
+    }
+    // Handle relative URL by combining it with the base URL
+    const baseUrl = process.env.APP_URL || 'http://localhost:3000/';
+    return `${baseUrl}news/${imgName}`;
 };
 exports.getImageUrl = getImageUrl;
 const getProfileImageUrl = (imgName) => {

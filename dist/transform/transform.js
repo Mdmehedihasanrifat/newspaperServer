@@ -9,6 +9,7 @@ const newsTransform = (news) => {
         headline: news.title,
         details: news.description,
         image: (0, helper_1.getImageUrl)(news.image),
+        createdAt: news.createdAt,
         author: {
             id: (_a = news.user) === null || _a === void 0 ? void 0 : _a.id, // Use optional chaining to avoid errors if user is undefined
             name: (_b = news.user) === null || _b === void 0 ? void 0 : _b.firstName,

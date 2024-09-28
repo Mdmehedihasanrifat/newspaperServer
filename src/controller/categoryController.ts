@@ -16,7 +16,7 @@ export const createCategory = async (req: Request, res: Response): Promise<Respo
 export const getAllCategories = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const categories = await categoryModel.findAll();
-    return res.status(200).json(categories);
+    return res.json(categories);
   } catch (err: any) {
     return res.status(500).json({ message: err.message });
   }

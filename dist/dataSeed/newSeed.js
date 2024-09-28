@@ -12,22 +12,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const postgres_1 = require("../postgres/postgres");
 const faker_1 = require("@faker-js/faker"); // Import faker for generating fake data
 // Helper function to generate random news data using Faker
+// Updated generateFakeNewsData function
 function generateFakeNewsData(count) {
     const newsData = [];
     for (let i = 0; i < count; i++) {
         newsData.push({
-            title: faker_1.faker.lorem.sentence(), // Random title
-            description: faker_1.faker.lorem.paragraph(), // Random description
-            image: faker_1.faker.image.url(), // Random image URL
-            userId: faker_1.faker.number.int({ min: 1, max: 4 }), // Random userId between 1 and 10
-            createdAt: faker_1.faker.date.past().toISOString(), // Random past date
-            updatedAt: faker_1.faker.date.recent().toISOString(), // Recent date
+            title: faker_1.faker.lorem.words({ min: 18, max: 20 }), // Title with around 20 words
+            description: faker_1.faker.lorem.words(200), // Description with exactly 200 words
+            image: `https://picsum.photos/seed/${faker_1.faker.string.uuid()}/800/600`, // Dynamic image with fixed size (800x600)
+            userId: faker_1.faker.number.int({ min: 1, max: 4 }),
+            createdAt: faker_1.faker.date.past().toISOString(),
+            updatedAt: faker_1.faker.date.recent().toISOString(),
         });
     }
     return newsData;
 }
 // Generate a set number of fake news articles
-const newsData = generateFakeNewsData(1000); // Generating 10 fake news items
+const newsData = generateFakeNewsData(100000); // Generating 10 fake news items
 // Helper function to generate random category IDs
 function generateRandomCategoryIds(maxCategories, maxId) {
     const categoryIds = [];

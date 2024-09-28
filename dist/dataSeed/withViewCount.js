@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const elasticSearch_1 = require("../config/elasticSearch"); // Assuming you've already set this up
 const postgres_1 = require("../postgres/postgres"); // Your Sequelize models
 const BATCH_SIZE = 1000; // Adjust the batch size according to your needs
-const INDEX_NAME = 'news'; // Elasticsearch index name
+const INDEX_NAME = 'recommendation'; // Elasticsearch index name
 // Step 1: Create the Elasticsearch index with mappings
 function createIndex() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -29,6 +29,7 @@ function createIndex() {
                                 details: { type: 'text' },
                                 image: { type: 'keyword' },
                                 createdAt: { type: 'date' },
+                                viewCount: { type: 'integer' }, // Add viewCount mapping
                                 author: {
                                     properties: {
                                         id: { type: 'integer' },
@@ -81,10 +82,18 @@ function indexNews() {
                             attributes: ['id', 'name'], // Fetch category id and name
                             through: { attributes: [] }, // Exclude attributes from the join table
                         },
+                        {
+                            model: postgres_1.visitorViewModel,
+                            as: 'visitorViews',
+                            attributes: ['viewCount'], // Fetch view count directly
+                            required: false // Optional join to keep articles without views
+                        }
                     ],
                 });
                 const body = newsList.flatMap(news => {
                     var _a;
+                    // Get view count or default to 0 if not present
+                    const viewCount = news.visitorViews.length > 0 ? news.visitorViews[0].viewCount : 0;
                     return [
                         { index: { _index: INDEX_NAME, _id: news.id.toString() } }, // Index each news by ID
                         {
@@ -93,11 +102,11 @@ function indexNews() {
                             details: news.description,
                             image: news.image,
                             createdAt: news.createdAt,
+                            viewCount: viewCount, // Include viewCount in the indexed document
                             author: news.user ? {
                                 id: news.user.id,
                                 name: news.user.firstName,
                             } : null, // If author exists, index it
-                            // updated here CategoryIds made categories because of storing
                             categories: ((_a = news.categories) === null || _a === void 0 ? void 0 : _a.map((category) => ({
                                 id: category.id,
                                 name: category.name,
